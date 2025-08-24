@@ -37,6 +37,14 @@ const Header = ({ activeTab, setActiveTab }) => {
               Be a Donor
             </button>
             <button
+              onClick={() => setActiveTab('find-donors')}
+              className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'find-donors' ? 'bg-red-100 text-red-700' : 'text-gray-700 hover:text-red-600'
+              }`}
+            >
+              Find Donors
+            </button>
+            <button
               onClick={() => setActiveTab('dashboard')}
               className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                 activeTab === 'dashboard' ? 'bg-red-100 text-red-700' : 'text-gray-700 hover:text-red-600'

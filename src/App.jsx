@@ -197,6 +197,19 @@ const JeevanLink = () => {
       {activeTab === 'home' && <HomePage setActiveTab={setActiveTab} />}
       {activeTab === 'request' && <RequestForm />}
       {activeTab === 'donor' && <DonorFormComponent />}
+      {activeTab === 'find-donors' && (
+        <MatchedDonorList
+          requestData={{
+            requestType: 'Blood',
+            bloodGroup: 'O+',
+            city: 'Delhi',
+            urgency: 'High',
+            hospitalName: 'AIIMS Delhi'
+          }}
+          donors={donors}
+          onNotifyDonors={handleNotifyDonors}
+        />
+      )}
       {activeTab === 'dashboard' && <Dashboard />}
     </div>
   );

@@ -1,24 +1,88 @@
-import React, { useState } from 'react';
-import { Users, MapPin, Phone, Mail, Heart, AlertTriangle, Send, CheckCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Users, MapPin, Phone, Mail, Clock, AlertTriangle, Heart, Filter, Search, User } from 'lucide-react';
 
-const MatchedDonorList = ({ donors, onNotifyDonors, isLoading = false }) => {
+const MatchedDonorList = ({ 
+  requestData, 
+  donors = [], 
+  onNotifyDonors,
+  isLoading = false 
+}) => {
+  const [matchedDonors, setMatchedDonors] = useState([]);
+  const [filteredDonors, setFilteredDonors] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [distanceFilter, setDistanceFilter] = useState('all');
   const [notifiedDonors, setNotifiedDonors] = useState(new Set());
-  const [isNotifying, setIsNotifying] = useState(false);
 
-  const handleNotifyAll = async () => {
-    setIsNotifying(true);
-    try {
-      await onNotifyDonors(donors);
-      // Mark all donors as notified
-      setNotifiedDonors(new Set(donors.map(donor => donor.id)));
-    } catch (error) {
-      console.error('Failed to notify donors:', error);
-    } finally {
-      setIsNotifying(false);
+  // Find matching donors based on request criteria
+  useEffect(() => {
+    if (!requestData || !donors.length) return;
+
+    const matches = donors.filter(donor => {
+      if (!donor.isAvailable) return false;
+
+      // Blood type matching
+      if (requestData.requestType === 'Blood' && requestData.bloodGroup) {
+        if (donor.bloodGroup !== requestData.bloodGroup) return false;
+      }
+
+      // Organ type matching
+      if (requestData.requestType === 'Organ' && requestData.organType) {
+        if (donor.organType !== requestData.organType) return false;
+      }
+
+      // Location matching (simple city-based for now)
+      if (requestData.city && donor.city) {
+        const requestCity = requestData.city.toLowerCase();
+        const donorCity = donor.city.toLowerCase();
+        if (requestCity !== donorCity) return false;
+      }
+
+      return true;
+    });
+
+    // Sort by relevance (exact matches first, then by availability)
+    const sortedMatches = matches.sort((a, b) => {
+      // Exact city match gets priority
+      const aCityMatch = a.city?.toLowerCase() === requestData.city?.toLowerCase();
+      const bCityMatch = b.city?.toLowerCase() === requestData.city?.toLowerCase();
+      
+      if (aCityMatch && !bCityMatch) return -1;
+      if (!aCityMatch && bCityMatch) return 1;
+      
+      // Then by availability
+      if (a.isAvailable && !b.isAvailable) return -1;
+      if (!a.isAvailable && b.isAvailable) return 1;
+      
+      return 0;
+    });
+
+    setMatchedDonors(sortedMatches);
+    setFilteredDonors(sortedMatches);
+  }, [requestData, donors]);
+
+  // Filter donors based on search and distance
+  useEffect(() => {
+    let filtered = matchedDonors;
+
+    // Search filter
+    if (searchTerm) {
+      filtered = filtered.filter(donor =>
+        donor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        donor.city.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        donor.bloodGroup.toLowerCase().includes(searchTerm.toLowerCase())
+      );
     }
-  };
 
-  const handleNotifySingle = async (donor) => {
+    // Distance filter (simplified for now)
+    if (distanceFilter !== 'all') {
+      // This would integrate with actual distance calculation API
+      // For now, just show all matches
+    }
+
+    setFilteredDonors(filtered);
+  }, [searchTerm, distanceFilter, matchedDonors]);
+
+  const handleNotifyDonor = async (donor) => {
     try {
       await onNotifyDonors([donor]);
       setNotifiedDonors(prev => new Set([...prev, donor.id]));
@@ -27,159 +91,233 @@ const MatchedDonorList = ({ donors, onNotifyDonors, isLoading = false }) => {
     }
   };
 
-  if (!donors || donors.length === 0) {
+  const handleNotifyAll = async () => {
+    try {
+      await onNotifyDonors(filteredDonors);
+      setNotifiedDonors(prev => new Set([...prev, ...filteredDonors.map(d => d.id)]));
+    } catch (error) {
+      console.error('Failed to notify donors:', error);
+    }
+  };
+
+  if (isLoading) {
     return (
-      <div className="text-center py-12">
-        <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-        <h3 className="text-xl font-medium text-gray-900 mb-2">No Matched Donors Found</h3>
-        <p className="text-gray-600">We couldn't find any donors matching your requirements in this area.</p>
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-50 py-8 w-full">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Finding matching donors...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!requestData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-50 py-8 w-full">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center">
+            <AlertTriangle className="w-16 h-16 text-red-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-900 mb-2">No Request Data</h2>
+            <p className="text-gray-600">Please submit an emergency request first to find matching donors.</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-xl p-8">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h3 className="text-2xl font-bold text-gray-900 flex items-center">
-            <Users className="w-6 h-6 text-green-600 mr-2" />
-            Matched Donors ({donors.length})
-          </h3>
-          <p className="text-gray-600 mt-1">These donors match your requirements and are available</p>
-        </div>
-        
-        <button
-          onClick={handleNotifyAll}
-          disabled={isNotifying || isLoading}
-          className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-6 py-3 rounded-lg font-semibold transition-all transform hover:scale-105 shadow-lg disabled:transform-none flex items-center"
-        >
-          {isNotifying ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-              Notifying...
-            </>
-          ) : (
-            <>
-              <Send className="w-4 h-4 mr-2" />
-              Notify All Donors
-            </>
-          )}
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {donors.map((donor) => (
-          <div key={donor.id} className="border border-gray-200 rounded-xl p-6 hover:shadow-lg transition-shadow">
-            <div className="flex justify-between items-start mb-4">
-              <div className="flex items-center">
-                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-3">
-                  <Heart className="w-6 h-6 text-red-600" />
-                </div>
-                <div>
-                  <h4 className="font-semibold text-gray-900">{donor.name}</h4>
-                  <p className="text-sm text-gray-600">{donor.age} years old</p>
-                </div>
-              </div>
-              
-              <div className="text-right">
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                  <CheckCircle className="w-3 h-3 mr-1" />
-                  Available
-                </span>
-              </div>
-            </div>
-
-            <div className="space-y-3 mb-4">
-              <div className="flex items-center text-sm text-gray-600">
-                <div className="w-4 h-4 bg-red-100 rounded mr-2 flex items-center justify-center">
-                  <span className="text-xs font-bold text-red-600">{donor.bloodGroup}</span>
-                </div>
-                Blood Group
-              </div>
-              
-              {donor.organType && (
-                <div className="flex items-center text-sm text-gray-600">
-                  <Heart className="w-4 h-4 text-red-500 mr-2" />
-                  {donor.organType.charAt(0).toUpperCase() + donor.organType.slice(1)}
-                </div>
-              )}
-              
-              <div className="flex items-center text-sm text-gray-600">
-                <MapPin className="w-4 h-4 text-gray-400 mr-2" />
-                {donor.city}
-              </div>
-            </div>
-
-            <div className="border-t border-gray-100 pt-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm text-gray-600">Contact Info:</div>
-                <button
-                  onClick={() => handleNotifySingle(donor)}
-                  disabled={notifiedDonors.has(donor.id) || isNotifying}
-                  className={`text-sm px-3 py-1 rounded-md transition-colors ${
-                    notifiedDonors.has(donor.id)
-                      ? 'bg-green-100 text-green-700 cursor-default'
-                      : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
-                  }`}
-                >
-                  {notifiedDonors.has(donor.id) ? (
-                    <>
-                      <CheckCircle className="w-3 h-3 inline mr-1" />
-                      Notified
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-3 h-3 inline mr-1" />
-                      Notify
-                    </>
-                  )}
-                </button>
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex items-center text-sm text-gray-600">
-                  <Mail className="w-3 h-3 mr-2" />
-                  <span className="truncate">{donor.email}</span>
-                </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <Phone className="w-3 h-3 mr-2" />
-                  <span>{donor.phone}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Notification Status */}
-      {notifiedDonors.size > 0 && (
-        <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <div className="flex items-center">
-            <CheckCircle className="w-5 h-5 text-green-600 mr-2" />
-            <span className="text-green-800 font-medium">
-              {notifiedDonors.size} donor{notifiedDonors.size > 1 ? 's' : ''} have been notified successfully!
-            </span>
-          </div>
-          <p className="text-green-700 text-sm mt-1">
-            They will receive an email with your emergency request details and contact information.
+    <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-50 py-8 w-full">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <h1 className="text-3xl font-bold text-gray-900 mb-4">
+            <Heart className="w-8 h-8 text-red-600 inline mr-3" />
+            Matching Donors Found
+          </h1>
+          <p className="text-lg text-gray-600">
+            We found <span className="font-semibold text-red-600">{filteredDonors.length}</span> potential donor{filteredDonors.length !== 1 ? 's' : ''} for your request
           </p>
         </div>
-      )}
 
-      {/* Tips */}
-      <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-        <div className="flex items-start">
-          <AlertTriangle className="w-5 h-5 text-blue-600 mr-2 mt-0.5" />
-          <div>
-            <h4 className="text-blue-800 font-medium mb-1">What happens next?</h4>
-            <ul className="text-blue-700 text-sm space-y-1">
-              <li>• Matched donors will receive an email with your request details</li>
-              <li>• They can contact you directly using the provided contact information</li>
-              <li>• You can also reach out to them proactively</li>
-              <li>• Keep your phone and email accessible for quick responses</li>
-            </ul>
+        {/* Request Summary */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
+          <h3 className="text-xl font-semibold mb-4 flex items-center">
+            <AlertTriangle className="w-5 h-5 text-red-600 mr-2" />
+            Request Details
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <p className="text-sm text-gray-500">Type</p>
+              <p className="font-medium">{requestData.requestType}</p>
+            </div>
+            {requestData.requestType === 'Blood' && (
+              <div>
+                <p className="text-sm text-gray-500">Blood Group</p>
+                <p className="font-medium">{requestData.bloodGroup}</p>
+              </div>
+            )}
+            {requestData.requestType === 'Organ' && (
+              <div>
+                <p className="text-sm text-gray-500">Organ Type</p>
+                <p className="font-medium">{requestData.organType}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-sm text-gray-500">Location</p>
+              <p className="font-medium">{requestData.city}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Urgency</p>
+              <p className="font-medium">{requestData.urgency}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Hospital</p>
+              <p className="font-medium">{requestData.hospitalName}</p>
+            </div>
           </div>
         </div>
+
+        {/* Filters */}
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+            <div className="flex-1 max-w-md">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search donors by name, city, or blood group..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <select
+                value={distanceFilter}
+                onChange={(e) => setDistanceFilter(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              >
+                <option value="all">All Locations</option>
+                <option value="nearby">Nearby (10km)</option>
+                <option value="city">Same City</option>
+                <option value="state">Same State</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Results */}
+        {filteredDonors.length === 0 ? (
+          <div className="text-center py-12">
+            <Users className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">No Matching Donors</h3>
+            <p className="text-gray-600">
+              {searchTerm ? 'Try adjusting your search criteria.' : 'No donors match your current request criteria.'}
+            </p>
+          </div>
+        ) : (
+          <>
+            {/* Bulk Actions */}
+            <div className="flex justify-between items-center mb-6">
+              <p className="text-gray-600">
+                Showing {filteredDonors.length} of {matchedDonors.length} matches
+              </p>
+              <button
+                onClick={handleNotifyAll}
+                disabled={filteredDonors.every(d => notifiedDonors.has(d.id))}
+                className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+              >
+                <Mail className="w-4 h-4 mr-2" />
+                Notify All ({filteredDonors.length})
+              </button>
+            </div>
+
+            {/* Donor List */}
+            <div className="space-y-4">
+              {filteredDonors.map((donor) => (
+                <div key={donor.id} className="bg-white rounded-lg shadow-lg p-6">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                          <User className="w-6 h-6 text-red-600" />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-lg font-semibold text-gray-900">{donor.name}</h3>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
+                            <div>
+                              <p className="text-sm text-gray-500">Age</p>
+                              <p className="font-medium">{donor.age} years</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-500">Blood Group</p>
+                              <p className="font-medium">{donor.bloodGroup}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-500">Organ Type</p>
+                              <p className="font-medium">{donor.organType}</p>
+                            </div>
+                            <div>
+                              <p className="text-sm text-gray-500">Location</p>
+                              <p className="font-medium flex items-center">
+                                <MapPin className="w-4 h-4 mr-1" />
+                                {donor.city}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-col gap-3 lg:items-end">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                          donor.isAvailable 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {donor.isAvailable ? 'Available' : 'Unavailable'}
+                        </span>
+                      </div>
+                      
+                      <div className="flex gap-2">
+                        <a
+                          href={`tel:${donor.phone}`}
+                          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
+                        >
+                          <Phone className="w-4 h-4 mr-2" />
+                          Call
+                        </a>
+                        <a
+                          href={`mailto:${donor.email}`}
+                          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center"
+                        >
+                          <Mail className="w-4 h-4 mr-2" />
+                          Email
+                        </a>
+                        <button
+                          onClick={() => handleNotifyDonor(donor)}
+                          disabled={notifiedDonors.has(donor.id)}
+                          className={`px-4 py-2 rounded-lg flex items-center ${
+                            notifiedDonors.has(donor.id)
+                              ? 'bg-gray-400 text-gray-600 cursor-not-allowed'
+                              : 'bg-red-600 text-white hover:bg-red-700'
+                          }`}
+                        >
+                          <Mail className="w-4 h-4 mr-2" />
+                          {notifiedDonors.has(donor.id) ? 'Notified' : 'Notify'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
